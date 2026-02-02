@@ -1,3 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>LGU Cadastral Monitoring Dashboard</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+body { margin:0; font-family: Arial, sans-serif; }
+#map { height: 100vh; }
+
+.panel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: white;
+  padding: 10px;
+  z-index: 1000;
+  width: 260px;
+  border-radius: 6px;
+  box-shadow: 0 0 5px rgba(0,0,0,0.3);
+}
+
+.panel input, .panel select {
+  width: 100%;
+  padding: 5px;
+  margin-bottom: 5px;
+}
+
+.counter {
+  font-size: 14px;
+  margin: 4px 0;
+}
+</style>
+</head>
+
+<body>
+
+<div class="panel">
+  <input type="text" id="searchBox" placeholder="Search Lot ID">
+  <select id="statusFilter">
+    <option value="">All Status</option>
+    <option value="Occupied">Occupied</option>
+    <option value="Vacant">Vacant</option>
+    <option value="Under Dispute">Under Dispute</option>
+  </select>
+
+  <div class="counter">Total: <span id="totalCount">0</span></div>
+  <div class="counter">Occupied: <span id="occupiedCount">0</span></div>
+  <div class="counter">Vacant: <span id="vacantCount">0</span></div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
 <script>
 var map = L.map('map').setView([14.5005, 121.0015], 16);
 
@@ -9,10 +67,58 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 var geojsonURL = "https://raw.githubusercontent.com/eisenpatt/labradorcadastraltrial/refs/heads/main/cadastralv3.geojson";
 var csvURL = "https://docs.google.com/spreadsheets/d/1wfqLtyfYIE1ZqI8cUmLJzcmSV_RgI5hIe76R04lB1G0/export?format=csv";
 
+var geojsonData;
 var parcelLayer;
 
-function loadData() {
+function getColor(status) {
+  if (status === "Occupied") return "green";
+  if (status === "Vacant") return "red";
+  if (status === "Under Dispute") return "orange";
+  return "gray";
+}
 
+function drawLayer() {
+  var search = document.getElementById("searchBox").value.toLowerCase();
+  var filterStatus = document.getElementById("statusFilter").value;
+
+  var total = 0, occupied = 0, vacant = 0;
+
+  if (parcelLayer) map.removeLayer(parcelLayer);
+
+  parcelLayer = L.geoJSON(geojsonData, {
+    filter: f => {
+      let matchSearch = !search || f.properties.lot_id.toLowerCase().includes(search);
+      let matchStatus = !filterStatus || f.properties.status === filterStatus;
+      return matchSearch && matchStatus;
+    },
+    style: f => {
+      total++;
+      if (f.properties.status === "Occupied") occupied++;
+      if (f.properties.status === "Vacant") vacant++;
+
+      return {
+        color: getColor(f.properties.status),
+        weight: 1,
+        fillOpacity: 0.5
+      };
+    },
+    onEachFeature: (f, l) => {
+      l.bindPopup(`
+        <b>Lot ID:</b> ${f.properties.lot_id}<br>
+        <b>Owner:</b> ${f.properties.owner || "N/A"}<br>
+        <b>Area:</b> ${f.properties.area || "N/A"} sqm<br>
+        <b>Status:</b> ${f.properties.status || "N/A"}<br>
+        <b>Remarks:</b> ${f.properties.remarks || "N/A"}
+      `);
+    }
+  }).addTo(map);
+
+  document.getElementById("totalCount").innerText = total;
+  document.getElementById("occupiedCount").innerText = occupied;
+  document.getElementById("vacantCount").innerText = vacant;
+}
+
+function loadData() {
   Papa.parse(csvURL, {
     download: true,
     header: true,
@@ -21,14 +127,12 @@ function loadData() {
 
       fetch(geojsonURL)
         .then(res => res.json())
-        .then(geojson => {
+        .then(gj => {
 
-          geojson.features.forEach(f => {
-
+          gj.features.forEach(f => {
             let row = results.data.find(r =>
               r.lot_id && r.lot_id.trim() === f.properties.lot_id
             );
-
             if (row) {
               f.properties.owner   = row.owner;
               f.properties.area    = row.area;
@@ -37,32 +141,19 @@ function loadData() {
             }
           });
 
-          if (parcelLayer) {
-            map.removeLayer(parcelLayer);
-          }
-
-          parcelLayer = L.geoJSON(geojson, {
-            style: feature => ({
-              color: feature.properties.status === "Occupied" ? "green" : "red",
-              weight: 1,
-              fillOpacity: 0.5
-            }),
-            onEachFeature: (feature, layer) => {
-              layer.bindPopup(`
-                <b>Lot ID:</b> ${feature.properties.lot_id}<br>
-                <b>Owner:</b> ${feature.properties.owner || "N/A"}<br>
-                <b>Area:</b> ${feature.properties.area || "N/A"} sqm<br>
-                <b>Status:</b> ${feature.properties.status || "N/A"}<br>
-                <b>Remarks:</b> ${feature.properties.remarks || "N/A"}
-              `);
-            }
-          }).addTo(map);
-
+          geojsonData = gj;
+          drawLayer();
         });
     }
   });
 }
 
+document.getElementById("searchBox").oninput = drawLayer;
+document.getElementById("statusFilter").onchange = drawLayer;
+
 loadData();
-setInterval(loadData, 30000); // auto-refresh every 30 sec
+setInterval(loadData, 30000);
 </script>
+
+</body>
+</html>
