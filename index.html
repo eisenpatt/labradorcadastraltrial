@@ -1,77 +1,75 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="utf-8">
 <title>LGU Cadastral Dashboard</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <style>
-  #map { height: 100vh; }
+#map { height: 100vh; }
 </style>
 </head>
-<body>
 
+<body>
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 
 <script>
-var map = L.map('map').setView([14.5, 121], 12);
+var map = L.map('map').setView([14.5005, 121.0015], 16);
+
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: 'Map data © OpenStreetMap contributors'
+  attribution: '© OpenStreetMap contributors'
 }).addTo(map);
 
-var geojsonURL = "https://github.com/eisenpatt/labradorcadastraltrial/main/cadastralv3.geojson";
+// 🔁 CHANGE THESE TWO LINES ONLY
+var geojsonURL = "https://raw.githubusercontent.com/eisenpatt/labradorcadastraltrial/refs/heads/main/cadastralv3.geojson";
 var csvURL = "https://docs.google.com/spreadsheets/d/12Ws_lxAYQtufJSLOWjzwinNf3fIlSdx82J8HSXMO7ho/export?format=csv";
 
-var parcelsLayer;
+var layer;
 
-function loadParcels() {
-    Papa.parse(csvURL, {
-        download: true,
-        header: true,
-        complete: function(results) {
-            var csvData = results.data;
+function loadData() {
+  Papa.parse(csvURL, {
+    download: true,
+    header: true,
+    complete: function(results) {
 
-            fetch(geojsonURL)
-            .then(res => res.json())
-            .then(geojsonData => {
-                geojsonData.features.forEach(f => {
-                    var parcel = csvData.find(c => c.PIN == f.properties.PIN);
-                    if(parcel){
-                        f.properties.status = parcel.Status;
-                        f.properties.owner = parcel.Owner || "";
-                        f.properties.remarks = parcel.Remarks || "";
-                    }
-                });
+      fetch(geojsonURL)
+        .then(res => res.json())
+        .then(data => {
 
-                if(parcelsLayer) map.removeLayer(parcelsLayer);
+          data.features.forEach(f => {
+            let row = results.data.find(r => r.lot_ID === f.properties.lot_id);
+            if (row) {
+              f.properties.status = row.Status;
+              f.properties.owner = row.Owner;
+            }
+          });
 
-                parcelsLayer = L.geoJSON(geojsonData, {
-                    style: function(feature){
-                        switch(feature.properties.status){
-                            case "Occupied": return {color:"green", weight:1, fillOpacity:0.5};
-                            case "Vacant": return {color:"red", weight:1, fillOpacity:0.5};
-                            default: return {color:"gray", weight:1, fillOpacity:0.5};
-                        }
-                    },
-                    onEachFeature: function(feature, layer){
-                        layer.bindPopup(
-                            "<b>PIN:</b> " + feature.properties.PIN +
-                            "<br><b>Owner:</b> " + feature.properties.owner +
-                            "<br><b>Status:</b> " + feature.properties.status +
-                            "<br><b>Remarks:</b> " + feature.properties.remarks
-                        );
-                    }
-                }).addTo(map);
-            });
-        }
-    });
+          if (layer) map.removeLayer(layer);
+
+          layer = L.geoJSON(data, {
+            style: f => ({
+              color: f.properties.status === "Occupied" ? "green" : "red",
+              weight: 1,
+              fillOpacity: 0.5
+            }),
+            onEachFeature: (f, l) => {
+              l.bindPopup(
+                "<b>Parcel:</b> " + f.properties.lot_id +
+                "<br><b>Status:</b> " + (f.properties.status || "N/A") +
+                "<br><b>Owner:</b> " + (f.properties.owner || "N/A")
+              );
+            }
+          }).addTo(map);
+        });
+    }
+  });
 }
 
-loadParcels();
-setInterval(loadParcels, 30000);
+loadData();
+setInterval(loadData, 30000);
 </script>
 
 </body>
