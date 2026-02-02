@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LGU Cadastral Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<style>
+  #map { height: 100vh; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+<script>
+var map = L.map('map').setView([14.5, 121], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: 'Map data © OpenStreetMap contributors'
+}).addTo(map);
+
+var geojsonURL = "https://github.com/eisenpatt/labradorcadastraltrial/main/cadastralv3.geojson";
+var csvURL = "https://docs.google.com/spreadsheets/d/12Ws_lxAYQtufJSLOWjzwinNf3fIlSdx82J8HSXMO7ho/export?format=csv";
+
+var parcelsLayer;
+
+function loadParcels() {
+    Papa.parse(csvURL, {
+        download: true,
+        header: true,
+        complete: function(results) {
+            var csvData = results.data;
+
+            fetch(geojsonURL)
+            .then(res => res.json())
+            .then(geojsonData => {
+                geojsonData.features.forEach(f => {
+                    var parcel = csvData.find(c => c.PIN == f.properties.PIN);
+                    if(parcel){
+                        f.properties.status = parcel.Status;
+                        f.properties.owner = parcel.Owner || "";
+                        f.properties.remarks = parcel.Remarks || "";
+                    }
+                });
+
+                if(parcelsLayer) map.removeLayer(parcelsLayer);
+
+                parcelsLayer = L.geoJSON(geojsonData, {
+                    style: function(feature){
+                        switch(feature.properties.status){
+                            case "Occupied": return {color:"green", weight:1, fillOpacity:0.5};
+                            case "Vacant": return {color:"red", weight:1, fillOpacity:0.5};
+                            default: return {color:"gray", weight:1, fillOpacity:0.5};
+                        }
+                    },
+                    onEachFeature: function(feature, layer){
+                        layer.bindPopup(
+                            "<b>PIN:</b> " + feature.properties.PIN +
+                            "<br><b>Owner:</b> " + feature.properties.owner +
+                            "<br><b>Status:</b> " + feature.properties.status +
+                            "<br><b>Remarks:</b> " + feature.properties.remarks
+                        );
+                    }
+                }).addTo(map);
+            });
+        }
+    });
+}
+
+loadParcels();
+setInterval(loadParcels, 30000);
+</script>
+
+</body>
+</html>
