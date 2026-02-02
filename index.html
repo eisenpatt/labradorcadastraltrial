@@ -1,21 +1,3 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>LGU Cadastral Dashboard</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-<style>
-#map { height: 100vh; }
-</style>
-</head>
-
-<body>
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
-
 <script>
 var map = L.map('map').setView([14.5005, 121.0015], 16);
 
@@ -23,55 +5,64 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap contributors'
 }).addTo(map);
 
-// 🔁 CHANGE THESE TWO LINES ONLY
+// 🔁 CHANGE THESE
 var geojsonURL = "https://raw.githubusercontent.com/eisenpatt/labradorcadastraltrial/refs/heads/main/cadastralv3.geojson";
-var csvURL = "https://docs.google.com/spreadsheets/d/12Ws_lxAYQtufJSLOWjzwinNf3fIlSdx82J8HSXMO7ho/export?format=csv";
+var csvURL = "https://docs.google.com/spreadsheets/d/1wfqLtyfYIE1ZqI8cUmLJzcmSV_RgI5hIe76R04lB1G0/export?format=csv";
 
-var layer;
+var parcelLayer;
 
 function loadData() {
+
   Papa.parse(csvURL, {
     download: true,
     header: true,
+    skipEmptyLines: true,
     complete: function(results) {
 
       fetch(geojsonURL)
         .then(res => res.json())
-        .then(data => {
+        .then(geojson => {
 
-          data.features.forEach(f => {
-            let row = results.data.find(r => r.lot_ID === f.properties.lot_id);
+          geojson.features.forEach(f => {
+
+            let row = results.data.find(r =>
+              r.lot_id && r.lot_id.trim() === f.properties.lot_id
+            );
+
             if (row) {
-              f.properties.status = row.status;
-              f.properties.owner = row.owner;
+              f.properties.owner   = row.owner;
+              f.properties.area    = row.area;
+              f.properties.status  = row.status;
+              f.properties.remarks = row.remarks;
             }
           });
 
-          if (layer) map.removeLayer(layer);
+          if (parcelLayer) {
+            map.removeLayer(parcelLayer);
+          }
 
-          layer = L.geoJSON(data, {
-            style: f => ({
-              color: f.properties.status === "Occupied" ? "green" : "red",
+          parcelLayer = L.geoJSON(geojson, {
+            style: feature => ({
+              color: feature.properties.status === "Occupied" ? "green" : "red",
               weight: 1,
               fillOpacity: 0.5
             }),
-            onEachFeature: (f, l) => {
-              l.bindPopup(
-                "<b>Parcel:</b> " + f.properties.lot_id +
-                "<br><b>Status:</b> " + (f.properties.status || "N/A") +
-                "<br><b>Owner:</b> " + (f.properties.owner || "N/A")
-              );
+            onEachFeature: (feature, layer) => {
+              layer.bindPopup(`
+                <b>Lot ID:</b> ${feature.properties.lot_id}<br>
+                <b>Owner:</b> ${feature.properties.owner || "N/A"}<br>
+                <b>Area:</b> ${feature.properties.area || "N/A"} sqm<br>
+                <b>Status:</b> ${feature.properties.status || "N/A"}<br>
+                <b>Remarks:</b> ${feature.properties.remarks || "N/A"}
+              `);
             }
           }).addTo(map);
+
         });
     }
   });
 }
 
 loadData();
-setInterval(loadData, 30000);
+setInterval(loadData, 30000); // auto-refresh every 30 sec
 </script>
-
-</body>
-</html>
-
