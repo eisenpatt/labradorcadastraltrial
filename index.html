@@ -42,8 +42,8 @@ function loadData() {
           data.features.forEach(f => {
             let row = results.data.find(r => r.lot_ID === f.properties.lot_id);
             if (row) {
-              f.properties.status = row.Status;
-              f.properties.owner = row.Owner;
+              f.properties.status = row.status;
+              f.properties.owner = row.owner;
             }
           });
 
@@ -74,3 +74,4 @@ setInterval(loadData, 30000);
 
 </body>
 </html>
+
