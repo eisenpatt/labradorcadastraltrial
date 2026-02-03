@@ -17,20 +17,30 @@ body { margin:0; font-family: Arial, sans-serif; }
   background: white;
   padding: 10px;
   z-index: 1000;
-  width: 260px;
+  width: 280px;
   border-radius: 6px;
-  box-shadow: 0 0 5px rgba(0,0,0,0.3);
+  box-shadow: 0 0 6px rgba(0,0,0,0.3);
 }
 
 .panel input, .panel select {
   width: 100%;
-  padding: 5px;
-  margin-bottom: 5px;
+  padding: 6px;
+  margin-bottom: 6px;
 }
 
 .counter {
   font-size: 14px;
   margin: 4px 0;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+th, td {
+  border: 1px solid #ccc;
+  padding: 3px;
 }
 </style>
 </head>
@@ -57,19 +67,23 @@ body { margin:0; font-family: Arial, sans-serif; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 
 <script>
+// ================= MAP SETUP =================
 var map = L.map('map').setView([14.5005, 121.0015], 16);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap contributors'
 }).addTo(map);
 
-// 🔁 CHANGE THESE
+// ================= CHANGE THESE =================
 var geojsonURL = "https://raw.githubusercontent.com/eisenpatt/labradorcadastraltrial/refs/heads/main/cadastralv3.geojson";
 var csvURL = "https://docs.google.com/spreadsheets/d/1wfqLtyfYIE1ZqI8cUmLJzcmSV_RgI5hIe76R04lB1G0/export?format=csv";
 
+// ================= GLOBALS =================
 var geojsonData;
 var parcelLayer;
+var historyIndex = {};
 
+// ================= HELPERS =================
 function getColor(status) {
   if (status === "Occupied") return "green";
   if (status === "Vacant") return "red";
@@ -77,6 +91,23 @@ function getColor(status) {
   return "gray";
 }
 
+function buildHistoryHTML(lot_id) {
+  let rows = historyIndex[lot_id] || [];
+  if (rows.length === 0) return "<i>No history</i>";
+
+  let html = "<table><tr><th>Date</th><th>Status</th><th>Owner</th></tr>";
+  rows.slice(0,5).forEach(r => {
+    html += `<tr>
+      <td>${new Date(r.Timestamp).toLocaleString()}</td>
+      <td>${r.status || ""}</td>
+      <td>${r.owner || ""}</td>
+    </tr>`;
+  });
+  html += "</table>";
+  return html;
+}
+
+// ================= DRAW LAYER =================
 function drawLayer() {
   var search = document.getElementById("searchBox").value.toLowerCase();
   var filterStatus = document.getElementById("statusFilter").value;
@@ -87,15 +118,14 @@ function drawLayer() {
 
   parcelLayer = L.geoJSON(geojsonData, {
     filter: f => {
-      let matchSearch = !search || f.properties.lot_id.toLowerCase().includes(search);
-      let matchStatus = !filterStatus || f.properties.status === filterStatus;
-      return matchSearch && matchStatus;
+      let s = !search || f.properties.lot_id.toLowerCase().includes(search);
+      let st = !filterStatus || f.properties.status === filterStatus;
+      return s && st;
     },
     style: f => {
       total++;
       if (f.properties.status === "Occupied") occupied++;
       if (f.properties.status === "Vacant") vacant++;
-
       return {
         color: getColor(f.properties.status),
         weight: 1,
@@ -108,7 +138,10 @@ function drawLayer() {
         <b>Owner:</b> ${f.properties.owner || "N/A"}<br>
         <b>Area:</b> ${f.properties.area || "N/A"} sqm<br>
         <b>Status:</b> ${f.properties.status || "N/A"}<br>
-        <b>Remarks:</b> ${f.properties.remarks || "N/A"}
+        <b>Remarks:</b> ${f.properties.remarks || "N/A"}<br>
+        <b>Last Updated:</b> ${f.properties.updatedAt || "N/A"}<br><br>
+        <b>Change History (latest 5)</b><br>
+        ${buildHistoryHTML(f.properties.lot_id)}
       `);
     }
   }).addTo(map);
@@ -118,26 +151,46 @@ function drawLayer() {
   document.getElementById("vacantCount").innerText = vacant;
 }
 
+// ================= LOAD DATA =================
 function loadData() {
+
   Papa.parse(csvURL, {
     download: true,
     header: true,
     skipEmptyLines: true,
     complete: function(results) {
 
+      historyIndex = {};
+      let latest = {};
+
+      results.data.forEach(r => {
+        if (!r.lot_id || !r.Timestamp) return;
+
+        if (!historyIndex[r.lot_id]) historyIndex[r.lot_id] = [];
+        historyIndex[r.lot_id].push(r);
+
+        let ts = new Date(r.Timestamp);
+        if (!latest[r.lot_id] || ts > new Date(latest[r.lot_id].Timestamp)) {
+          latest[r.lot_id] = r;
+        }
+      });
+
+      Object.keys(historyIndex).forEach(k => {
+        historyIndex[k].sort((a,b) => new Date(b.Timestamp) - new Date(a.Timestamp));
+      });
+
       fetch(geojsonURL)
         .then(res => res.json())
         .then(gj => {
 
           gj.features.forEach(f => {
-            let row = results.data.find(r =>
-              r.lot_id && r.lot_id.trim() === f.properties.lot_id
-            );
+            let row = latest[f.properties.lot_id];
             if (row) {
-              f.properties.owner   = row.owner;
-              f.properties.area    = row.area;
-              f.properties.status  = row.status;
-              f.properties.remarks = row.remarks;
+              f.properties.owner     = row.owner;
+              f.properties.area      = row.area;
+              f.properties.status    = row.status;
+              f.properties.remarks   = row.remarks;
+              f.properties.updatedAt = new Date(row.Timestamp).toLocaleString();
             }
           });
 
@@ -148,9 +201,11 @@ function loadData() {
   });
 }
 
+// ================= EVENTS =================
 document.getElementById("searchBox").oninput = drawLayer;
 document.getElementById("statusFilter").onchange = drawLayer;
 
+// ================= INIT =================
 loadData();
 setInterval(loadData, 30000);
 </script>
